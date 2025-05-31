@@ -27,8 +27,8 @@ This project serves as a practical exercise in modern Rust, covering key concept
 
 1.  **Clone the repository:**
     ```bash
-    git clone <your-repo-url>
-    cd rust-crawler
+    git clone git@github.com:ishworii/documentation_scraper.git
+    cd documentation_scraper
     ```
 
 2.  **Modify the Target URL (Optional):**
@@ -41,7 +41,7 @@ This project serves as a practical exercise in modern Rust, covering key concept
     cargo run --release
     ```
 
-    The program will print its progress to the console and, upon completion, will generate a file named `scraped_book_concurrent.html` in the project directory.
+    The program will print its progress to the console and, upon completion, will generate a file named `scraped_documentation_concurrent.html` in the project directory.
 
 ## How It Works: The Architecture
 
@@ -95,12 +95,3 @@ An interesting discovery was made when comparing the performance of the simple s
 -   [ ] **Respect `robots.txt`:** Implement a basic parser for the target's `robots.txt` file to be a more ethical crawler.
 -   [ ] **More Robust Error Handling:** Add retry logic with exponential backoff for failed network requests.
 -   [ ] **Different Output Formats:** Add flags to save the output as Markdown, JSON, or into a database like SQLite.
-
-## License
-
-This project is licensed under either of
-
--   Apache License, Version 2.0, ([LICENSE-APACHE](LICENSE-APACHE) or http://www.apache.org/licenses/LICENSE-2.0)
--   MIT license ([LICENSE-MIT](LICENSE-MIT) or http://opensource.org/licenses/MIT)
-
-at your option.
