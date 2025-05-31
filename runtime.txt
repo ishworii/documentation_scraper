@@ -1,2 +1,4 @@
 basic async debug -> cargo run  2.39s user 0.23s system 30% cpu 8.460 total
 basic async release -> cargo run --release  0.32s user 0.14s system 15% cpu 2.891 total
+concurrent debug -> cargo run  1.45s user 0.12s system 41% cpu 3.790 total
+concurrent release -> cargo run --release  0.32s user 0.14s system 13% cpu 3.495 total

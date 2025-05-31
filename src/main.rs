@@ -1,6 +1,9 @@
 use reqwest::Client;
 use scraper::{Html, Selector};
+use std::collections::HashSet;
 use std::fs;
+use std::sync::Arc;
+use tokio::sync::{Mutex, Semaphore, mpsc};
 use url::Url;
 
 async fn scrape_content(client: &Client, url: &Url) -> Result<(String, Option<Url>), String> {
@@ -45,28 +48,89 @@ async fn scrape_content(client: &Client, url: &Url) -> Result<(String, Option<Ur
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let start_url = Url::parse("https://doc.rust-lang.org/stable/book/title-page.html")?;
 
-    let client = Client::new();
-    let mut all_chapters_html = Vec::new();
-    let mut current_url = Some(start_url);
+    const MAX_CONCURRENT_REQUESTS: usize = 50;
+    let semaphore = Arc::new(Semaphore::new(MAX_CONCURRENT_REQUESTS));
 
-    while let Some(url_to_scrape) = current_url {
-        match scrape_content(&client, &url_to_scrape).await {
-            Ok((html_content, next_url_option)) => {
-                all_chapters_html.push(html_content);
-                current_url = next_url_option;
-            }
-            Err(e) => {
-                eprintln!("Stopping scraper due to an error.");
-                break;
-            }
-        }
+    let (tx, mut rx) = mpsc::channel(100);
+    let client = Arc::new(Client::new());
+    let visited_urls = Arc::new(Mutex::new(HashSet::new()));
+
+    spawn_scraping_task(
+        0,
+        start_url,
+        client.clone(),
+        tx.clone(),
+        semaphore.clone(),
+        visited_urls.clone(),
+    );
+
+    drop(tx);
+
+    let mut all_chapters = Vec::new();
+    while let Some((index, html)) = rx.recv().await {
+        all_chapters.push((index, html));
     }
 
     println!(
-        "Scraping completed,scraped {} chapters.",
-        all_chapters_html.len()
+        "\nCrawl complete. Scraped {} chapters. Sorting and saving to file...",
+        all_chapters.len()
     );
-    let combined_html = all_chapters_html.join("<hr/>");
-    fs::write("scraped_rust_documentation.html", combined_html)?;
+
+    all_chapters.sort_by_key(|(index, _)| *index);
+
+    let combined_html = all_chapters
+        .iter()
+        .map(|(_, html)| html.as_str())
+        .collect::<Vec<_>>()
+        .join("<hr />\n");
+    let final_html = format!(
+        r#"
+        <!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>Scraped Documentation</title>
+        <style>body {{ font-family: sans-serif; line-height: 1.6; max-width: 800px; margin: 2rem auto; padding: 0 1rem; }} h1, h2, h3 {{ line-height: 1.2; }} hr {{ margin: 3rem 0; }}</style>
+        </head><body>{}</body></html>
+        "#,
+        combined_html
+    );
+
+    fs::write("scraped_book_concurrent.html", final_html)?;
+    println!("Successfully saved content to scraped_book_concurrent.html");
+
     Ok(())
+}
+
+/// Helper function to spawn a new scraping task.
+fn spawn_scraping_task(
+    index: usize,
+    url: Url,
+    client: Arc<Client>,
+    tx: mpsc::Sender<(usize, String)>,
+    semaphore: Arc<Semaphore>,
+    visited: Arc<Mutex<HashSet<Url>>>,
+) {
+    tokio::spawn(async move {
+        let permit = semaphore.clone().acquire_owned().await.unwrap();
+
+        let mut visited_lock = visited.lock().await;
+        if !visited_lock.insert(url.clone()) {
+            return;
+        }
+        drop(visited_lock);
+
+        println!("Scraping chapter {}: {}", index, url);
+
+        match scrape_content(&client, &url).await {
+            Ok((html_content, next_url_option)) => {
+                if tx.send((index, html_content)).await.is_err() {
+                    eprintln!("Failed to send scraped content back to main. Receiver closed.");
+                }
+
+                if let Some(next_url) = next_url_option {
+                    spawn_scraping_task(index + 1, next_url, client, tx, semaphore, visited);
+                }
+            }
+            Err(e) => {
+                eprintln!("Error scraping {}: {}", url, e);
+            }
+        }
+    });
 }
